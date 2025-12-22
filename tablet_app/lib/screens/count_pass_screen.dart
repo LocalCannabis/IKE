@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import '../providers/app_state.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
@@ -107,6 +108,21 @@ class _CountPassScreenState extends State<CountPassScreen> {
           ),
         );
       }
+    }
+  }
+
+  /// Open camera scanner in a bottom sheet
+  Future<void> _openCameraScanner() async {
+    final barcode = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => const _CameraScannerSheet(),
+    );
+
+    if (barcode != null && barcode.isNotEmpty && mounted) {
+      _barcodeController.text = barcode;
+      await _handleScan();
     }
   }
 
@@ -250,6 +266,20 @@ class _CountPassScreenState extends State<CountPassScreen> {
                           ),
                         )
                       : const Icon(Icons.add),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Camera scan button
+              SizedBox(
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: _isScanning ? null : _openCameraScanner,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue.shade700,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                  ),
+                  child: const Icon(Icons.camera_alt),
                 ),
               ),
             ],
@@ -453,6 +483,265 @@ class _LineCard extends StatelessWidget {
         trailing: onEdit != null
             ? const Icon(Icons.edit, size: 18, color: Colors.grey)
             : null,
+      ),
+    );
+  }
+}
+
+/// Camera scanner bottom sheet
+class _CameraScannerSheet extends StatefulWidget {
+  const _CameraScannerSheet();
+
+  @override
+  State<_CameraScannerSheet> createState() => _CameraScannerSheetState();
+}
+
+class _CameraScannerSheetState extends State<_CameraScannerSheet> {
+  final MobileScannerController _controller = MobileScannerController(
+    detectionSpeed: DetectionSpeed.normal,
+    facing: CameraFacing.back,
+    // Enable all barcode formats including 2D codes for lot/package tracking
+    formats: [
+      // 1D barcodes (UPC, EAN, etc.)
+      BarcodeFormat.upcA,
+      BarcodeFormat.upcE,
+      BarcodeFormat.ean8,
+      BarcodeFormat.ean13,
+      BarcodeFormat.code39,
+      BarcodeFormat.code93,
+      BarcodeFormat.code128,
+      BarcodeFormat.itf,
+      BarcodeFormat.codabar,
+      // 2D barcodes (QR, Data Matrix, PDF417 for cannabis lot tracking)
+      BarcodeFormat.qrCode,
+      BarcodeFormat.dataMatrix,
+      BarcodeFormat.pdf417,
+      BarcodeFormat.aztec,
+    ],
+  );
+  bool _hasScanned = false;
+  String? _lastBarcodeType;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onDetect(BarcodeCapture capture) {
+    if (_hasScanned) return;
+    
+    final barcodes = capture.barcodes;
+    if (barcodes.isNotEmpty) {
+      final barcode = barcodes.first;
+      final value = barcode.rawValue;
+      final format = barcode.format;
+      
+      if (value != null && value.isNotEmpty) {
+        setState(() {
+          _hasScanned = true;
+          _lastBarcodeType = _formatName(format);
+        });
+        
+        // Vibrate/haptic feedback
+        HapticFeedback.mediumImpact();
+        
+        // For 2D barcodes (Data Matrix, PDF417), extract the relevant part
+        // Cannabis compliance codes often have format: SKU|LOT|EXPIRY or similar
+        final extractedValue = _extractBarcodeValue(value, format);
+        
+        // Return the barcode value with metadata
+        Navigator.pop(context, extractedValue);
+      }
+    }
+  }
+
+  /// Extract relevant value from barcode (handles 2D cannabis compliance codes)
+  String _extractBarcodeValue(String value, BarcodeFormat format) {
+    // For Data Matrix / PDF417 compliance codes, the value might be delimited
+    // Common formats:
+    // - Pipe delimited: SKU|LOT|DATE
+    // - GS1 format: (01)GTIN(10)LOT(17)EXPIRY
+    // - Simple: just the SKU or lot number
+    
+    // For now, return the full value - backend will parse it
+    // In future, we could parse GS1 Application Identifiers here
+    return value;
+  }
+
+  /// Get human-readable format name
+  String _formatName(BarcodeFormat format) {
+    switch (format) {
+      case BarcodeFormat.qrCode:
+        return 'QR Code';
+      case BarcodeFormat.dataMatrix:
+        return 'Data Matrix';
+      case BarcodeFormat.pdf417:
+        return 'PDF417';
+      case BarcodeFormat.aztec:
+        return 'Aztec';
+      case BarcodeFormat.upcA:
+        return 'UPC-A';
+      case BarcodeFormat.upcE:
+        return 'UPC-E';
+      case BarcodeFormat.ean8:
+        return 'EAN-8';
+      case BarcodeFormat.ean13:
+        return 'EAN-13';
+      case BarcodeFormat.code128:
+        return 'Code 128';
+      case BarcodeFormat.code39:
+        return 'Code 39';
+      case BarcodeFormat.code93:
+        return 'Code 93';
+      case BarcodeFormat.itf:
+        return 'ITF';
+      case BarcodeFormat.codabar:
+        return 'Codabar';
+      default:
+        return 'Barcode';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.7,
+      decoration: const BoxDecoration(
+        color: Colors.black,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          // Handle bar
+          Container(
+            margin: const EdgeInsets.only(top: 12),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade600,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          // Header
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Scan Barcode',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      'UPC • QR • Data Matrix • PDF417',
+                      style: TextStyle(
+                        color: Colors.grey.shade500,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close, color: Colors.white),
+                ),
+              ],
+            ),
+          ),
+          // Scanner view
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Stack(
+                children: [
+                  MobileScanner(
+                    controller: _controller,
+                    onDetect: _onDetect,
+                  ),
+                  // Scan area overlay - larger for 2D codes
+                  Center(
+                    child: Container(
+                      width: 280,
+                      height: 200,
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: _hasScanned ? Colors.green : Colors.white,
+                          width: 3,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: _hasScanned
+                          ? Center(
+                              child: Icon(
+                                Icons.check_circle,
+                                color: Colors.green,
+                                size: 60,
+                              ),
+                            )
+                          : null,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Instructions / Status
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              _hasScanned && _lastBarcodeType != null
+                  ? '$_lastBarcodeType detected!'
+                  : 'Point camera at barcode or QR code',
+              style: TextStyle(
+                color: _hasScanned ? Colors.green : Colors.grey.shade400,
+                fontSize: 14,
+                fontWeight: _hasScanned ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ),
+          // Controls
+          Padding(
+            padding: const EdgeInsets.only(bottom: 24, left: 16, right: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                // Flash toggle
+                IconButton(
+                  onPressed: () => _controller.toggleTorch(),
+                  icon: ValueListenableBuilder(
+                    valueListenable: _controller,
+                    builder: (context, state, child) {
+                      return Icon(
+                        state.torchState == TorchState.on
+                            ? Icons.flash_on
+                            : Icons.flash_off,
+                        color: Colors.white,
+                        size: 28,
+                      );
+                    },
+                  ),
+                ),
+                // Camera flip
+                IconButton(
+                  onPressed: () => _controller.switchCamera(),
+                  icon: const Icon(
+                    Icons.cameraswitch,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

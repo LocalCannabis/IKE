@@ -6,7 +6,8 @@ import '../models/models.dart';
 class ApiService {
   // Use localhost for web/linux development
   // Change to actual IP when testing on Android device/emulator
-  static const String baseUrl = 'http://127.0.0.1:5000/api';
+  // Your Mac's LAN IP - tablet must be on same WiFi network
+  static const String baseUrl = 'http://192.168.0.31:5000/api';
 
   String? _accessToken;
 

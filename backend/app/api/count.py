@@ -384,13 +384,53 @@ def add_line(pass_id: str):
     if not barcode:
         return jsonify({"error": "barcode required"}), 400
     
-    # Look up product
+    # Parse barcode - might be a compliance code with embedded data
+    # Common formats:
+    # - Simple SKU: "1066639"
+    # - Cova SKU: "ZXTA5ZAK"
+    # - GS1 Data Matrix: "(01)00123456789012(10)LOT123(17)251231"
+    # - Pipe delimited: "SKU|LOT|DATE"
+    
+    lookup_value = barcode
+    package_id_from_scan = None
+    
+    # Try to extract SKU from GS1 format (01) = GTIN
+    if "(01)" in barcode:
+        import re
+        gtin_match = re.search(r'\(01\)(\d{14})', barcode)
+        if gtin_match:
+            lookup_value = gtin_match.group(1).lstrip('0')  # Remove leading zeros
+        lot_match = re.search(r'\(10\)([^(]+)', barcode)
+        if lot_match:
+            package_id_from_scan = lot_match.group(1)
+    # Try pipe-delimited format
+    elif "|" in barcode:
+        parts = barcode.split("|")
+        lookup_value = parts[0]
+        if len(parts) > 1:
+            package_id_from_scan = parts[1]
+    
+    # Look up product by SKU, Cova SKU, or partial match
     product = Product.query.filter(
-        (Product.sku == barcode) | (Product.cova_sku == barcode)
+        (Product.sku == lookup_value) | 
+        (Product.cova_sku == lookup_value) |
+        (Product.sku == barcode) |
+        (Product.cova_sku == barcode)
     ).first()
     
+    # If still not found, try fuzzy matching on cova_sku (compliance codes can vary)
+    if not product and len(lookup_value) >= 6:
+        product = Product.query.filter(
+            Product.cova_sku.ilike(f"%{lookup_value}%")
+        ).first()
+    
     if not product:
-        return jsonify({"error": "Product not found", "barcode": barcode}), 404
+        return jsonify({
+            "error": "Product not found", 
+            "barcode": barcode,
+            "lookup_value": lookup_value,
+            "hint": "Scanned code doesn't match any SKU or Cova SKU in database"
+        }), 404
     
     # Validate category/subcategory if pass has scope
     if count_pass.category and product.category:
@@ -412,7 +452,7 @@ def add_line(pass_id: str):
             }), 400
     
     counted_qty = int(payload.get("counted_qty", 1))
-    package_id = str(payload.get("package_id", "")).strip() or None
+    package_id = str(payload.get("package_id", "")).strip() or package_id_from_scan or None
     confidence = str(payload.get("confidence", "scanned")).strip()
     notes = str(payload.get("notes", "")).strip() or None
     

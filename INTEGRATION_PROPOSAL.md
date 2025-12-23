@@ -1,4 +1,4 @@
-# LocalBot Inventory Count Integration Proposal
+# LocalBot Inventory Count & Upstock Integration Proposal
 
 Based on analysis of the JFK (LocalBot) codebase and the Inventory Count App roadmap.
 
@@ -263,6 +263,107 @@ class InventoryMovement(db.Model):
         db.Index("idx_movements_store_time", "store_id", "occurred_at"),
         db.Index("idx_movements_sku_time", "sku", "occurred_at"),
     )
+
+
+class UpstockBaseline(db.Model):
+    """Par levels for FOH locations - target 'well stocked' quantities"""
+    
+    __tablename__ = "upstock_baselines"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    store_id = db.Column(db.Integer, db.ForeignKey("stores.id"), nullable=False)
+    location_id = db.Column(db.Integer, db.ForeignKey("inventory_locations.id"), nullable=False)
+    
+    # Optional category scoping
+    cabinet = db.Column(db.String(100))  # Category grouping
+    subcategory = db.Column(db.String(100))
+    
+    # Product and target
+    sku = db.Column(db.String(50), nullable=False)
+    par_qty = db.Column(db.Integer, nullable=False)  # "Well stocked" target
+    
+    # Audit
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    
+    # Relationships
+    store = db.relationship("Store")
+    location = db.relationship("InventoryLocation")
+    updated_by = db.relationship("User")
+    
+    __table_args__ = (
+        db.UniqueConstraint("store_id", "location_id", "sku", name="unique_baseline_sku"),
+        db.Index("idx_baselines_store_location", "store_id", "location_id"),
+    )
+
+
+class UpstockRun(db.Model):
+    """A single nightly upstock task instance"""
+    
+    __tablename__ = "upstock_runs"
+    
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    store_id = db.Column(db.Integer, db.ForeignKey("stores.id"), nullable=False)
+    location_id = db.Column(db.Integer, db.ForeignKey("inventory_locations.id"), nullable=False)
+    
+    # Time window for sales computation
+    window_start_at = db.Column(db.DateTime, nullable=False)
+    window_end_at = db.Column(db.DateTime)
+    
+    # Run lifecycle
+    status = db.Column(db.String(30), default="in_progress")  # in_progress|completed|abandoned
+    
+    # Attribution
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    completed_at = db.Column(db.DateTime)
+    
+    notes = db.Column(db.Text)
+    
+    # Relationships
+    store = db.relationship("Store")
+    location = db.relationship("InventoryLocation")
+    created_by = db.relationship("User")
+    lines = db.relationship("UpstockRunLine", back_populates="run", cascade="all, delete-orphan")
+    
+    __table_args__ = (
+        db.Index("idx_upstock_runs_store_status", "store_id", "location_id", "status"),
+        db.Index("idx_upstock_runs_created", "store_id", "created_at"),
+    )
+
+
+class UpstockRunLine(db.Model):
+    """Individual item within an upstock run"""
+    
+    __tablename__ = "upstock_run_lines"
+    
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    run_id = db.Column(db.String(36), db.ForeignKey("upstock_runs.id"), nullable=False)
+    
+    # Product
+    sku = db.Column(db.String(50), nullable=False)
+    
+    # Computed values (from movements)
+    sold_qty = db.Column(db.Integer, nullable=False, default=0)
+    suggested_pull_qty = db.Column(db.Integer, nullable=False, default=0)
+    
+    # Staff input
+    pulled_qty = db.Column(db.Integer)  # NULL until staff enters
+    status = db.Column(db.String(30), default="pending")  # pending|done|skipped|exception
+    exception_reason = db.Column(db.String(100))  # BOH short, already stocked, missing, etc.
+    
+    # Audit
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    
+    # Relationships
+    run = db.relationship("UpstockRun", back_populates="lines")
+    updated_by = db.relationship("User")
+    
+    __table_args__ = (
+        db.UniqueConstraint("run_id", "sku", name="unique_run_line_sku"),
+        db.Index("idx_upstock_lines_run_status", "run_id", "status"),
+    )
 ```
 
 ---
@@ -305,14 +406,42 @@ POST   /api/count/locations                   # Create location (admin)
 POST   /api/count/movements/import            # Bulk import movements from Cova
 ```
 
+### New Blueprint: `app/api/upstock.py`
+
+```
+# Baselines (Admin - store default triggers)
+GET    /api/upstock/baselines                 # List baselines for store
+POST   /api/upstock/baselines                 # Create/update baseline
+PUT    /api/upstock/baselines/<id>            # Update baseline
+DELETE /api/upstock/baselines/<id>            # Remove baseline
+
+# Upstock Runs
+POST   /api/upstock/runs                      # Create new run (computes sold_qty from movements)
+GET    /api/upstock/runs                      # List runs (filtered by store/status)
+GET    /api/upstock/runs/<id>                 # Get run details with lines
+POST   /api/upstock/runs/<id>/start           # Begin run (status → in_progress)
+POST   /api/upstock/runs/<id>/submit          # Mark run complete
+GET    /api/upstock/runs/<id>/summary         # Get run summary stats
+
+# Upstock Lines
+GET    /api/upstock/runs/<id>/lines           # Get all lines for run
+PUT    /api/upstock/lines/<id>                # Update line (pulled_qty, status)
+POST   /api/upstock/lines/<id>/exception      # Mark line with exception
+POST   /api/upstock/lines/<id>/skip           # Skip line (no pull needed)
+
+# Quick Actions
+POST   /api/upstock/runs/<id>/lines/<id>/scan # Confirm pull via barcode scan
+```
+
 ### Blueprint Registration
 
 Add to `app/__init__.py`:
 
 ```python
-from app.api import count
+from app.api import count, upstock
 
 app.register_blueprint(count.bp, url_prefix="/api/count")
+app.register_blueprint(upstock.bp, url_prefix="/api/upstock")
 ```
 
 ---
@@ -459,7 +588,185 @@ class ReconciliationService:
 
 ---
 
-## 6. EDIT PROPOSALS FOR JFK
+## 6. UPSTOCK SERVICE
+
+### New Service: `app/services/upstock.py`
+
+```python
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional
+from sqlalchemy import func, and_
+from app import db
+from app.models.inventory_count import InventoryMovement
+from app.models.upstock import UpstockBaseline, UpstockRun, UpstockRunLine
+from app.models.store import InventoryItem
+from app.models.product import Product
+
+
+class UpstockService:
+    """
+    Computes what needs to be pulled from BOH to floor based on sales movements.
+    
+    Core Logic:
+    sold_qty = SUM(movements WHERE type='sale' AND occurred_at BETWEEN lookback_start AND now)
+    suggested_pull = MIN(sold_qty, baseline.restock_trigger)
+    """
+    
+    def create_run(
+        self, 
+        store_id: int, 
+        user_id: int,
+        lookback_hours: int = 24,
+        category: Optional[str] = None
+    ) -> UpstockRun:
+        """
+        Create a new upstock run with computed sold quantities.
+        
+        Args:
+            store_id: Store to create run for
+            user_id: User creating the run
+            lookback_hours: Hours to look back for sales (default 24)
+            category: Optional category filter
+        """
+        # Create the run
+        run = UpstockRun(
+            store_id=store_id,
+            started_by_user_id=user_id,
+            lookback_hours=lookback_hours,
+            status="created"
+        )
+        db.session.add(run)
+        db.session.flush()  # Get run.id
+        
+        # Calculate lookback window
+        now = datetime.utcnow()
+        lookback_start = now - timedelta(hours=lookback_hours)
+        
+        # Get sold quantities from movements
+        sold_by_sku = self._calculate_sold_quantities(
+            store_id, lookback_start, now, category
+        )
+        
+        # Get baselines for store
+        baselines = self._get_baselines(store_id, category)
+        
+        # Create run lines
+        for sku, sold_qty in sold_by_sku.items():
+            baseline = baselines.get(sku)
+            trigger = baseline.restock_trigger if baseline else 0
+            
+            # Only include items that sold at least some
+            if sold_qty > 0:
+                line = UpstockRunLine(
+                    run_id=run.id,
+                    sku=sku,
+                    sold_qty=sold_qty,
+                    suggested_pull_qty=min(sold_qty, trigger) if trigger else sold_qty,
+                    status="pending"
+                )
+                db.session.add(line)
+        
+        db.session.commit()
+        return run
+    
+    def _calculate_sold_quantities(
+        self, 
+        store_id: int, 
+        start: datetime, 
+        end: datetime,
+        category: Optional[str] = None
+    ) -> Dict[str, int]:
+        """
+        Sum sale movements within the lookback window.
+        """
+        query = db.session.query(
+            InventoryMovement.sku,
+            func.sum(func.abs(InventoryMovement.qty_delta))
+        ).filter(
+            InventoryMovement.store_id == store_id,
+            InventoryMovement.movement_type == "sale",
+            InventoryMovement.occurred_at >= start,
+            InventoryMovement.occurred_at <= end
+        )
+        
+        if category:
+            query = query.join(Product).filter(Product.category == category)
+        
+        results = query.group_by(InventoryMovement.sku).all()
+        
+        return {sku: int(qty) for sku, qty in results}
+    
+    def _get_baselines(
+        self, 
+        store_id: int, 
+        category: Optional[str] = None
+    ) -> Dict[str, UpstockBaseline]:
+        """
+        Get baseline configurations for store.
+        """
+        query = UpstockBaseline.query.filter(
+            UpstockBaseline.store_id == store_id,
+            UpstockBaseline.is_active == True
+        )
+        
+        if category:
+            query = query.filter(UpstockBaseline.category == category)
+        
+        return {b.sku: b for b in query.all()}
+    
+    def update_line(
+        self,
+        line_id: str,
+        pulled_qty: Optional[int] = None,
+        status: Optional[str] = None,
+        exception_reason: Optional[str] = None,
+        user_id: Optional[int] = None
+    ) -> UpstockRunLine:
+        """
+        Update a run line with staff input.
+        """
+        line = UpstockRunLine.query.get(line_id)
+        if not line:
+            raise ValueError("Line not found")
+        
+        if pulled_qty is not None:
+            line.pulled_qty = pulled_qty
+        if status:
+            line.status = status
+        if exception_reason:
+            line.exception_reason = exception_reason
+        if user_id:
+            line.updated_by_user_id = user_id
+        
+        db.session.commit()
+        return line
+    
+    def get_run_summary(self, run_id: str) -> Dict:
+        """
+        Get summary statistics for a run.
+        """
+        run = UpstockRun.query.get(run_id)
+        if not run:
+            raise ValueError("Run not found")
+        
+        lines = UpstockRunLine.query.filter_by(run_id=run_id).all()
+        
+        return {
+            "run_id": run_id,
+            "status": run.status,
+            "total_lines": len(lines),
+            "pending": sum(1 for l in lines if l.status == "pending"),
+            "done": sum(1 for l in lines if l.status == "done"),
+            "skipped": sum(1 for l in lines if l.status == "skipped"),
+            "exceptions": sum(1 for l in lines if l.status == "exception"),
+            "total_suggested": sum(l.suggested_pull_qty for l in lines),
+            "total_pulled": sum(l.pulled_qty or 0 for l in lines if l.status == "done"),
+        }
+```
+
+---
+
+## 7. EDIT PROPOSALS FOR JFK
 
 ### A. Add relationship backref to Store model
 
@@ -539,7 +846,7 @@ def lookup_product_by_barcode():
 
 ---
 
-## 7. CSV DATA MAPPING
+## 8. CSV DATA MAPPING
 
 The Cova "Inventory On Hand by Package" CSV maps to existing structures:
 
@@ -561,8 +868,9 @@ The Cova "Inventory On Hand by Package" CSV maps to existing structures:
 
 ---
 
-## 8. MIGRATION CHECKLIST
+## 9. MIGRATION CHECKLIST
 
+### Count Module
 1. [ ] Create `backend/app/models/inventory_count.py`
 2. [ ] Update `backend/app/__init__.py` to import new models
 3. [ ] Create Alembic migration: `flask db migrate -m "Add inventory count tables"`
@@ -572,15 +880,40 @@ The Cova "Inventory On Hand by Package" CSV maps to existing structures:
 7. [ ] Add barcode lookup endpoint to `inventory.py`
 8. [ ] Add tests in `backend/tests/`
 
+### Upstock Module
+9. [ ] Create `backend/app/models/upstock.py`
+10. [ ] Create Alembic migration: `flask db migrate -m "Add upstock tables"`
+11. [ ] Create `backend/app/api/upstock.py` blueprint
+12. [ ] Register upstock blueprint in `__init__.py`
+13. [ ] Create `backend/app/services/upstock.py`
+14. [ ] Add upstock tests in `backend/tests/`
+
+### Tablet App
+15. [ ] Create Upstock run list screen
+16. [ ] Create Upstock run detail screen with line list
+17. [ ] Create Upstock line update screen (pulled qty, exceptions)
+18. [ ] Add barcode scanning for pull confirmation
+19. [ ] Add run summary view
+
 ---
 
-## 9. NEXT STEPS
+## 10. NEXT STEPS
 
-1. **Review this proposal** - Confirm alignment with business requirements
-2. **Create models** - I can generate the full model file
-3. **Create migration** - Generate Alembic migration
-4. **Implement API** - Create count.py blueprint with full CRUD
-5. **Reconciliation service** - Implement variance calculation
-6. **Tests** - Unit tests for new functionality
+### Phase 5 (Count Module)
+1. **Create models** - Generate `inventory_count.py` model file
+2. **Create migration** - Generate Alembic migration for count tables
+3. **Implement API** - Create `count.py` blueprint with full CRUD
+4. **Reconciliation service** - Implement variance calculation
+5. **Tests** - Unit tests for count functionality
 
-Would you like me to proceed with implementing any of these components?
+### Phase 6 (Upstock Module)
+6. **Create models** - Generate `upstock.py` model file
+7. **Create migration** - Generate Alembic migration for upstock tables
+8. **Implement API** - Create `upstock.py` blueprint
+9. **Upstock service** - Implement sold quantity computation
+10. **Tablet screens** - Build upstock run/line Flutter screens
+11. **Tests** - Unit tests for upstock functionality
+
+---
+
+*Document updated with Upstock Module integration proposal.*

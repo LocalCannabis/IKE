@@ -1,4 +1,4 @@
-# IKE - Inventory Count Tablet App
+# IKE - Inventory Count & Upstock Tablet App
 Flask Backend + Dual Frontend Strategy (Flutter Dev / Kotlin Prod)
 
 ================================================
@@ -10,7 +10,7 @@ IKE fits into the LocalCannabis product family:
 - **JFK** - Current production system (MK4)
 - **BHO** - Next-gen system (MK5, in development)
 - **AOC** - Data analysis module
-- **IKE** - This app. Standalone inventory counting
+- **IKE** - This app. Standalone inventory counting & upstocking
   - Integrates with JFK now
   - Will integrate with BHO later
 
@@ -36,7 +36,8 @@ PROJECT STATUS (Updated: December 2025)
 - Data models matching backend
 
 ## 🔄 Phase 3: Flutter Workflow Validation (IN PROGRESS)
-- [ ] Full login → session → pass → scan flow testing
+- [x] Full login → session → pass → scan flow testing
+- [x] QR code and 2D barcode scanning (Data Matrix, PDF417)
 - [ ] UI polish and error handling
 - [ ] Product lookup integration
 - [ ] Quantity editing and line management
@@ -61,7 +62,15 @@ PROJECT STATUS (Updated: December 2025)
 - [ ] Cova inventory movement import
 - [ ] Variance reconciliation
 
-## 📋 Phase 6: BHO Integration (FUTURE)
+## 📋 Phase 6: Upstock Module (PLANNED)
+- [ ] DB migrations: upstock_baselines, upstock_runs, upstock_run_lines
+- [ ] API: start run, update line, complete run
+- [ ] Flutter: Upstock Home + Run Checklist + Complete flow
+- [ ] Scanner wedge highlight behavior
+- [ ] LocalBot dashboard: runs list + run detail
+- [ ] Integrate BOH availability (from Cova) to auto-handle sold-outs
+
+## 📋 Phase 7: BHO Integration (FUTURE)
 - [ ] Migrate to BHO API when available
 - [ ] Enhanced features from next-gen platform
 
@@ -454,10 +463,11 @@ Reports can exist in two states:
 FUTURE EXTENSIONS (DESIGNED-IN)
 ================================================
 
-Upstocking:
-- Staff request quantity per SKU per location
-- BOH fulfillment records actual moved qty
-- Track product flow between locations
+Upstocking (Phase 6):
+- See detailed UPSTOCK MODULE section below
+- EOD pull list generation from sales data
+- BOH fulfillment tracking
+- Par-level baselines
 
 Lot-level tracking:
 - 2D barcode parsing
@@ -468,22 +478,184 @@ Offline mode:
 - Sync when network restored
 
 ================================================
+UPSTOCK MODULE
+================================================
+
+Purpose:
+- Remove friction from nightly upstocking
+- Generate pull list automatically based on sales since last upstock
+- Track completion with timestamps + employee identity
+- Avoid paper lists and guessing
+- Keep logic server-side; tablet app is a fast UI + scanner tool
+
+Core idea:
+- Establish a "Well Stocked" FOH baseline (par levels)
+- Every day, compute what sold since last upstock run
+- Suggested pull = sold qty (ignore sold-out items)
+- Staff fulfills list from BOH and records actual pulled qty
+- Store a completed upstock run for audit + dashboarding
+
+--------------------------------
+UPSTOCK DATA MODEL
+--------------------------------
+
+upstock_baselines:
+- id (PK)
+- store_id
+- location_id              // FOH location (e.g. FOH_DISPLAY)
+- cabinet (TEXT NULL)      // optional: category grouping
+- subcategory (TEXT NULL)
+- sku (TEXT)
+- par_qty (INT)            // "well stocked" target
+- updated_at (DATETIME)
+- updated_by_user_id
+
+upstock_runs:
+- id (UUID, PK)
+- store_id
+- location_id              // FOH target location
+- window_start_at (DATETIME)
+- window_end_at (DATETIME NULL)
+- status (TEXT)            // in_progress | completed | abandoned
+- created_by_user_id
+- created_at (DATETIME)
+- completed_at (DATETIME NULL)
+- notes (TEXT NULL)
+
+upstock_run_lines:
+- id (UUID, PK)
+- run_id (FK -> upstock_runs.id)
+- sku (TEXT)
+- sold_qty (INT)                   // computed from movements
+- suggested_pull_qty (INT)         // computed suggestion
+- pulled_qty (INT NULL)            // entered by staff
+- status (TEXT)                    // pending | done | skipped | exception
+- exception_reason (TEXT NULL)     // BOH short, already stocked, missing
+- updated_at (DATETIME)
+- updated_by_user_id
+
+--------------------------------
+UPSTOCK API ENDPOINTS
+--------------------------------
+
+Baselines:
+GET  /upstock/baselines?store_id=&location_id=
+PUT  /upstock/baselines
+  body: [{sku, par_qty, cabinet?, subcategory?}, ...]
+
+Upstock Runs:
+POST /upstock/runs/start
+  body: {store_id, location_id, window_end_at?}
+  server:
+    - chooses window_start_at from last completed run
+    - sets window_end_at to now (or provided)
+    - computes run lines from movements
+  returns: run + lines
+
+GET /upstock/runs?store_id=&location_id=&status=
+GET /upstock/runs/{run_id}
+
+PATCH /upstock/runs/{run_id}/lines/{sku}
+  body: {pulled_qty, status, exception_reason?}
+
+POST /upstock/runs/{run_id}/complete
+
+--------------------------------
+UPSTOCK COMPUTATION LOGIC
+--------------------------------
+
+A) Determine the upstock window
+- window_start_at = last completed upstock_run.completed_at for store/location
+  - if none exists: default to start-of-day
+- window_end_at = "now" when starting the run
+
+B) Compute sold_qty per SKU
+- Use inventory_movements where movement_type='sale'
+- sold_qty = SUM(-qty_delta) for sales in window
+
+C) Determine suggested_pull_qty
+- v1 (simple): suggested_pull_qty = sold_qty
+- Assumes FOH was "well stocked" at baseline time
+- v2 (par-aware): can use par_qty for reporting
+
+--------------------------------
+UPSTOCK TABLET UX
+--------------------------------
+
+Screen: Upstock Home
+- Last completed upstock time
+- Button: START UPSTOCK
+- Recent runs list
+
+Screen: Upstock Run (Checklist)
+Header:
+- Location (FOH)
+- Window start -> end
+- Progress: completed / total
+- Button: COMPLETE RUN
+
+Body:
+- Group lines by cabinet/subcategory
+- Line item layout:
+  - Product name, Brand, size
+  - SKU
+  - SOLD TODAY: sold_qty
+  - SUGGESTED PULL: suggested_pull_qty
+  - Pulled qty control: quick buttons [0] [1] [2] [3] [5] [+] [-]
+  - Status: DONE / SKIP / EXCEPTION
+
+Scanner Support:
+- Hidden focused input field
+- On barcode scan: highlight matching SKU line
+- Allow fast qty confirm
+
+Screen: Completion Summary
+- Counts: done / skipped / exception
+- List exceptions for manager review
+- Timestamps + employee identity
+
+--------------------------------
+UPSTOCK DASHBOARD (LocalBot Frontend)
+--------------------------------
+Add page: Upstock Runs
+
+Views:
+1) Runs table: date, store, location, started_by, completion rate, exceptions
+2) Run detail: grouped by cabinet/subcategory, sold_qty vs pulled_qty
+3) Baseline editor (v2): set par_qty per SKU for FOH
+
+================================================
 IMPLEMENTATION MILESTONES
 ================================================
 
+INVENTORY COUNTING:
 ✅ 1. Database migrations (Flask/SQLAlchemy)
 ✅ 2. Auth endpoint (PIN dev, Google planned)
 ✅ 3. Product lookup API
 ✅ 4. Session / Count Pass / Line CRUD
 ✅ 5. Flutter app scaffold
-🔄 6. Scanner wedge support (keyboard input works)
-📋 7. Camera barcode scanning
-📋 8. Variance report v1
-📋 9. Inventory movement ingestion
-📋 10. Reconciliation logic
-📋 11. Manager tools + export
-📋 12. JFK integration (Phase 5)
-📋 13. BHO integration (Phase 6)
+✅ 6. QR + 2D barcode scanning (Data Matrix, PDF417)
+🔄 7. Scanner wedge support (keyboard input works)
+📋 8. Camera barcode scanning polish
+📋 9. Variance report v1
+📋 10. Inventory movement ingestion
+📋 11. Reconciliation logic
+📋 12. Manager tools + export
+📋 13. JFK integration (Phase 5)
+
+UPSTOCKING (Phase 6):
+📋 14. DB tables: upstock_baselines, upstock_runs, upstock_run_lines
+📋 15. API: POST /upstock/runs/start (compute lines from movements)
+📋 16. API: PATCH lines, POST complete
+📋 17. Flutter: Upstock Home screen
+📋 18. Flutter: Upstock Run checklist + qty controls
+📋 19. Flutter: Scanner wedge highlight behavior
+📋 20. Flutter: Completion summary
+📋 21. LocalBot Frontend: Upstock dashboard
+📋 22. Cova BOH availability integration (sold-out handling)
+
+FUTURE:
+📋 23. BHO integration (Phase 7)
 
 ================================================
 DIRECTORY STRUCTURE

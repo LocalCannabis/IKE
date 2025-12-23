@@ -38,11 +38,20 @@ PROJECT STATUS (Updated: December 2025)
 ## 🔄 Phase 3: Flutter Workflow Validation (IN PROGRESS)
 - [x] Full login → session → pass → scan flow testing
 - [x] QR code and 2D barcode scanning (Data Matrix, PDF417)
+- [x] Product lookup integration
+- [x] Quantity editing and line management
 - [ ] UI polish and error handling
-- [ ] Product lookup integration
-- [ ] Quantity editing and line management
-- [ ] Pass submission workflow
+- [ ] Pass submission workflow testing
 - [ ] Validate UX patterns before Kotlin port
+
+## ✅ Phase 3.5: Upstock Module (COMPLETE - Dec 2025)
+- [x] DB models: upstock_baselines, upstock_runs, upstock_run_lines, upstock_imports
+- [x] API: /api/upstock/* endpoints (start, update, complete, abandon, baselines)
+- [x] Flutter: UpstockHomeScreen + UpstockRunScreen
+- [x] Bottom navigation with Count / Upstock tabs
+- [x] Scanner input and quick confirm dialogs
+- [ ] End-to-end testing with seed data
+- [ ] LocalBot dashboard integration (future)
 
 ## 📋 Phase 4: Kotlin + Jetpack Compose Production App (PLANNED)
 - [ ] Android project setup with Kotlin + Jetpack Compose
@@ -62,13 +71,12 @@ PROJECT STATUS (Updated: December 2025)
 - [ ] Cova inventory movement import
 - [ ] Variance reconciliation
 
-## 📋 Phase 6: Upstock Module (PLANNED)
-- [ ] DB migrations: upstock_baselines, upstock_runs, upstock_run_lines
-- [ ] API: start run, update line, complete run
-- [ ] Flutter: Upstock Home + Run Checklist + Complete flow
-- [ ] Scanner wedge highlight behavior
-- [ ] LocalBot dashboard: runs list + run detail
-- [ ] Integrate BOH availability (from Cova) to auto-handle sold-outs
+## 📋 Phase 6: Cova Email Ingestion (PLANNED)
+- [ ] Email service to fetch Cova CSV attachments
+- [ ] CSV parser for itemized sales reports
+- [ ] Import into inventory_movements table
+- [ ] Scheduled job (cron/Celery) for nightly processing
+- [ ] Auto-stage upstock runs from imported data
 
 ## 📋 Phase 7: BHO Integration (FUTURE)
 - [ ] Migrate to BHO API when available

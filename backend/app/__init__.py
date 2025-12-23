@@ -54,13 +54,14 @@ def create_app(config_name="development"):
         CORS(app, origins=origins, supports_credentials=True)
     
     # Import models (triggers table registration)
-    from app.models import user, product, inventory_count  # noqa: F401
+    from app.models import user, product, inventory_count, upstock  # noqa: F401
     
     # Register blueprints
-    from app.api import auth, count, products
+    from app.api import auth, count, products, upstock as upstock_api
     app.register_blueprint(auth.bp, url_prefix="/api/auth")
     app.register_blueprint(count.bp, url_prefix="/api/count")
     app.register_blueprint(products.bp, url_prefix="/api/products")
+    app.register_blueprint(upstock_api.bp, url_prefix="/api/upstock")
     
     # Health check
     @app.route("/api/health")

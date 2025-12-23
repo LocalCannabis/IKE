@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'providers/app_state.dart';
 import 'screens/login_screen.dart';
 import 'screens/session_screen.dart';
+import 'screens/upstock_home_screen.dart';
 
 void main() {
   runApp(const IKEApp());
@@ -79,11 +80,58 @@ class AuthWrapper extends StatelessWidget {
 
         // Show login or main app
         if (appState.isLoggedIn) {
-          return const SessionScreen();
+          return const MainNavigationScreen();
         } else {
           return const LoginScreen();
         }
       },
+    );
+  }
+}
+
+/// Main navigation with bottom tabs for Count and Upstock
+class MainNavigationScreen extends StatefulWidget {
+  const MainNavigationScreen({super.key});
+
+  @override
+  State<MainNavigationScreen> createState() => _MainNavigationScreenState();
+}
+
+class _MainNavigationScreenState extends State<MainNavigationScreen> {
+  int _currentIndex = 0;
+
+  final _screens = const [
+    SessionScreen(),
+    UpstockHomeScreen(),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: IndexedStack(
+        index: _currentIndex,
+        children: _screens,
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _currentIndex,
+        onDestinationSelected: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.inventory_2_outlined),
+            selectedIcon: Icon(Icons.inventory_2),
+            label: 'Count',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.move_up_outlined),
+            selectedIcon: Icon(Icons.move_up),
+            label: 'Upstock',
+          ),
+        ],
+      ),
     );
   }
 }

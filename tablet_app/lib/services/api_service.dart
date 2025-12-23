@@ -305,6 +305,151 @@ class ApiService {
     }
   }
 
+  // ============ UPSTOCK ============
+
+  /// Start a new upstock run
+  Future<UpstockRunResult> startUpstockRun({
+    required int storeId,
+    required String locationId,
+    String? notes,
+    DateTime? windowEndAt,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/upstock/runs/start'),
+      headers: _headers,
+      body: jsonEncode({
+        'store_id': storeId,
+        'location_id': locationId,
+        if (notes != null) 'notes': notes,
+        if (windowEndAt != null) 'window_end_at': windowEndAt.toIso8601String(),
+      }),
+    );
+
+    if (response.statusCode == 201) {
+      final data = jsonDecode(response.body);
+      return UpstockRunResult(
+        run: UpstockRun.fromJson(data['run']),
+        stats: UpstockRunStats.fromJson(data['stats']),
+      );
+    } else {
+      final error = jsonDecode(response.body)['error'] ?? 'Failed to start upstock run';
+      throw ApiException(error, response.statusCode);
+    }
+  }
+
+  /// Get list of upstock runs
+  Future<List<UpstockRun>> getUpstockRuns({
+    required int storeId,
+    String? locationId,
+    String? status,
+    int limit = 50,
+  }) async {
+    final params = {
+      'store_id': storeId.toString(),
+      if (locationId != null) 'location_id': locationId,
+      if (status != null) 'status': status,
+      'limit': limit.toString(),
+    };
+
+    final uri = Uri.parse('$baseUrl/upstock/runs').replace(queryParameters: params);
+    final response = await http.get(uri, headers: _headers);
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return (data['runs'] as List)
+          .map((r) => UpstockRun.fromJson(r))
+          .toList();
+    } else {
+      throw ApiException('Failed to get upstock runs', response.statusCode);
+    }
+  }
+
+  /// Get upstock run detail with all lines
+  Future<UpstockRunResult> getUpstockRun(String runId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/upstock/runs/$runId'),
+      headers: _headers,
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return UpstockRunResult(
+        run: UpstockRun.fromJson(data['run']),
+        stats: UpstockRunStats.fromJson(data['stats']),
+      );
+    } else {
+      throw ApiException('Failed to get upstock run', response.statusCode);
+    }
+  }
+
+  /// Update an upstock run line
+  Future<UpstockRunLine> updateUpstockLine({
+    required String runId,
+    required String sku,
+    int? pulledQty,
+    String? status,
+    String? exceptionReason,
+  }) async {
+    final response = await http.patch(
+      Uri.parse('$baseUrl/upstock/runs/$runId/lines/$sku'),
+      headers: _headers,
+      body: jsonEncode({
+        if (pulledQty != null) 'pulled_qty': pulledQty,
+        if (status != null) 'status': status,
+        if (exceptionReason != null) 'exception_reason': exceptionReason,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return UpstockRunLine.fromJson(data['line']);
+    } else {
+      final error = jsonDecode(response.body)['error'] ?? 'Failed to update line';
+      throw ApiException(error, response.statusCode);
+    }
+  }
+
+  /// Complete an upstock run
+  Future<UpstockRunResult> completeUpstockRun(String runId, {bool validateAllResolved = false}) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/upstock/runs/$runId/complete'),
+      headers: _headers,
+      body: jsonEncode({
+        'validate_all_resolved': validateAllResolved,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return UpstockRunResult(
+        run: UpstockRun.fromJson(data['run']),
+        stats: UpstockRunStats.fromJson(data['stats']),
+      );
+    } else {
+      final error = jsonDecode(response.body)['error'] ?? 'Failed to complete run';
+      throw ApiException(error, response.statusCode);
+    }
+  }
+
+  /// Abandon an upstock run
+  Future<UpstockRun> abandonUpstockRun(String runId, {String? reason}) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/upstock/runs/$runId/abandon'),
+      headers: _headers,
+      body: jsonEncode({
+        if (reason != null) 'reason': reason,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return UpstockRun.fromJson(data['run']);
+    } else {
+      final error = jsonDecode(response.body)['error'] ?? 'Failed to abandon run';
+      throw ApiException(error, response.statusCode);
+    }
+  }
+
   // ============ HEALTH ============
 
   /// Check API health
@@ -355,6 +500,16 @@ class AddLineResult {
     required this.incremented,
     this.previousQty,
     this.product,
+  });
+}
+
+class UpstockRunResult {
+  final UpstockRun run;
+  final UpstockRunStats stats;
+
+  UpstockRunResult({
+    required this.run,
+    required this.stats,
   });
 }
 

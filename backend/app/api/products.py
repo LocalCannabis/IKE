@@ -20,7 +20,11 @@ def lookup_by_barcode():
     
     GET /api/products/lookup?barcode=XXX&store_id=1
     
-    Searches: SKU, cova_sku (exact match)
+    Searches: GTIN-14, UPC, SKU, cova_sku (exact match)
+    Barcode length determines search priority:
+      - 14 digits: GTIN-14 first
+      - 12 digits: UPC first
+      - Other: SKU/cova_sku
     """
     barcode = request.args.get("barcode", "").strip()
     store_id = request.args.get("store_id", type=int)
@@ -28,10 +32,29 @@ def lookup_by_barcode():
     if not barcode:
         return jsonify({"error": "barcode parameter required"}), 400
     
-    # Try exact match on SKU or cova_sku
-    product = Product.query.filter(
-        (Product.sku == barcode) | (Product.cova_sku == barcode)
-    ).first()
+    # Clean barcode - remove any non-digit characters for GTIN/UPC lookup
+    digits_only = "".join(c for c in barcode if c.isdigit())
+    
+    product = None
+    
+    # Try GTIN-14 (14 digits) - e.g., DataMatrix on cannabis products
+    if len(digits_only) == 14:
+        product = Product.query.filter(Product.gtin_14 == digits_only).first()
+    
+    # Try UPC (12 digits)
+    if not product and len(digits_only) == 12:
+        product = Product.query.filter(Product.upc == digits_only).first()
+    
+    # Try GTIN-13/EAN-13 (13 digits) - extract UPC (last 12)
+    if not product and len(digits_only) == 13:
+        upc_from_ean = digits_only[1:]  # Drop leading 0
+        product = Product.query.filter(Product.upc == upc_from_ean).first()
+    
+    # Fallback: try SKU or cova_sku (exact match on original barcode)
+    if not product:
+        product = Product.query.filter(
+            (Product.sku == barcode) | (Product.cova_sku == barcode)
+        ).first()
     
     if not product:
         return jsonify({
@@ -170,6 +193,8 @@ def _serialize_product(product: Product) -> dict:
         "id": product.id,
         "sku": product.sku,
         "cova_sku": product.cova_sku,
+        "gtin_14": product.gtin_14,
+        "upc": product.upc,
         "name": product.name,
         "brand": product.brand,
         "category": product.category,

@@ -4,10 +4,8 @@ import '../models/models.dart';
 
 /// API service for communicating with the Flask backend
 class ApiService {
-  // Use localhost for web/linux development
-  // Change to actual IP when testing on Android device/emulator
-  // Your Mac's LAN IP - tablet must be on same WiFi network
-  static const String baseUrl = 'http://192.168.0.31:5000/api';
+  // Local dev server
+  static const String baseUrl = 'http://192.168.1.7:5000/api';
 
   String? _accessToken;
 
@@ -31,6 +29,32 @@ class ApiService {
   }
 
   // ============ AUTH ============
+
+  /// Google OAuth login - sends ID token to backend for verification
+  Future<AuthResult> googleLogin(String idToken) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/google'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'token': idToken}),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      _accessToken = data['access_token'];
+      return AuthResult(
+        user: User.fromJson(data['user']),
+        token: data['access_token'],
+        created: false, // Google login doesn't create dev accounts
+      );
+    } else if (response.statusCode == 403) {
+      final data = jsonDecode(response.body);
+      throw ApiException(data['error'] ?? 'Domain not allowed', response.statusCode);
+    } else if (response.statusCode == 401) {
+      throw ApiException('Invalid Google token', response.statusCode);
+    } else {
+      throw ApiException('Google login failed', response.statusCode);
+    }
+  }
 
   /// Dev login - simple email-based login for development
   Future<AuthResult> devLogin(String email, {String? name}) async {
@@ -446,6 +470,48 @@ class ApiService {
       return UpstockRun.fromJson(data['run']);
     } else {
       final error = jsonDecode(response.body)['error'] ?? 'Failed to abandon run';
+      throw ApiException(error, response.statusCode);
+    }
+  }
+
+  // ============ SALES SYNC ============
+
+  /// Get sales sync status for a store
+  Future<Map<String, dynamic>> getSalesSyncStatus({required int storeId}) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/upstock/sync/status?store_id=$storeId'),
+      headers: _headers,
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } else {
+      throw ApiException('Failed to get sync status', response.statusCode);
+    }
+  }
+
+  /// Trigger sales sync from cova_sales to inventory_movements
+  Future<Map<String, dynamic>> syncSales({
+    required int storeId,
+    String? fromDate,
+    String? toDate,
+    bool force = false,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/upstock/sync/sales'),
+      headers: _headers,
+      body: jsonEncode({
+        'store_id': storeId,
+        if (fromDate != null) 'from_date': fromDate,
+        if (toDate != null) 'to_date': toDate,
+        'force': force,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } else {
+      final error = jsonDecode(response.body)['error'] ?? 'Failed to sync sales';
       throw ApiException(error, response.statusCode);
     }
   }

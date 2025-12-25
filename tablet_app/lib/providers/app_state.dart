@@ -118,6 +118,40 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Login with Google ID token
+  Future<bool> googleLogin(String idToken) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final result = await _api.googleLogin(idToken);
+      _currentUser = result.user;
+      _accessToken = result.token;
+      _isLoggedIn = true;
+
+      // Save token
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('access_token', result.token);
+
+      // Load stores
+      _stores = await _api.getStores();
+      if (_stores.isNotEmpty) {
+        await selectStore(_stores.first);
+      }
+
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   /// Logout
   Future<void> logout() async {
     _api.clearToken();

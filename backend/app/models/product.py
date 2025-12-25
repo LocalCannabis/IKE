@@ -14,6 +14,11 @@ class Product(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     sku = db.Column(db.String(50), nullable=False, index=True)
     cova_sku = db.Column(db.String(50), unique=True)
+    
+    # Barcode identifiers (from BCLDB SU_CODE field)
+    gtin_14 = db.Column(db.String(14), index=True)  # Full GTIN-14 barcode
+    upc = db.Column(db.String(12), index=True)  # UPC-A (12-digit) extracted from GTIN-14
+    
     name = db.Column(db.String(255), nullable=False)
     brand = db.Column(db.String(100))
     category = db.Column(db.String(50))

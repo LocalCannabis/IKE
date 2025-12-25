@@ -4,6 +4,7 @@ import 'providers/app_state.dart';
 import 'screens/login_screen.dart';
 import 'screens/session_screen.dart';
 import 'screens/upstock_home_screen.dart';
+import 'theme/app_theme.dart';
 
 void main() {
   runApp(const IKEApp());
@@ -19,29 +20,7 @@ class IKEApp extends StatelessWidget {
       child: MaterialApp(
         title: 'IKE',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.green,
-            brightness: Brightness.light,
-          ),
-          useMaterial3: true,
-          appBarTheme: AppBarTheme(
-            backgroundColor: Colors.green.shade700,
-            foregroundColor: Colors.white,
-            elevation: 2,
-          ),
-          cardTheme: CardThemeData(
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          inputDecorationTheme: InputDecorationTheme(
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-        ),
+        theme: AppTheme.light,
         home: const AuthWrapper(),
       ),
     );
@@ -54,24 +33,48 @@ class AuthWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
     return Consumer<AppState>(
       builder: (context, appState, child) {
         // Show loading while initializing
         if (appState.isLoading && !appState.isLoggedIn) {
           return Scaffold(
+            backgroundColor: AppColors.background,
             body: Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    Icons.inventory_2,
-                    size: 64,
-                    color: Colors.green.shade700,
+                  // Logo/Icon
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryLighter,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Icon(
+                      Icons.inventory_2,
+                      size: 48,
+                      color: AppColors.primary,
+                    ),
                   ),
                   const SizedBox(height: 24),
-                  const CircularProgressIndicator(),
+                  SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
                   const SizedBox(height: 16),
-                  const Text('Loading...'),
+                  Text(
+                    'Loading...',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
                 ],
               ),
             ),

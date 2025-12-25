@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
+import '../theme/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -10,8 +11,8 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController(text: 'dev@example.com');
-  final _nameController = TextEditingController(text: 'Dev User');
+  final _emailController = TextEditingController(text: 'tim@localcannabisco.ca');
+  final _nameController = TextEditingController(text: 'Tim');
   bool _isLoading = false;
 
   @override
@@ -41,8 +42,8 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Login failed: ${appState.error}'),
-          backgroundColor: Colors.red,
+          content: Text('Login failed: \${appState.error}'),
+          backgroundColor: AppColors.error,
         ),
       );
     }
@@ -50,131 +51,169 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
     return Scaffold(
       body: Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Colors.green.shade700,
-              Colors.green.shade900,
+              AppColors.gray50,
+              AppColors.gray100,
             ],
           ),
         ),
         child: Center(
-          child: Card(
-            elevation: 8,
-            margin: const EdgeInsets.all(32),
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 400),
-              padding: const EdgeInsets.all(32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Logo/Title
-                  Icon(
-                    Icons.inventory_2,
-                    size: 64,
-                    color: Colors.green.shade700,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Inventory Count',
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green.shade800,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 420),
+            margin: const EdgeInsets.all(24),
+            child: Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: const BorderSide(color: AppColors.gray200),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(40),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Logo container
+                    Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [AppColors.primary, AppColors.primaryDark],
                         ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'LocalCannabis',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: Colors.grey.shade600,
-                        ),
-                  ),
-                  const SizedBox(height: 32),
-
-                  // Email field
-                  TextField(
-                    controller: _emailController,
-                    decoration: const InputDecoration(
-                      labelText: 'Email',
-                      prefixIcon: Icon(Icons.email),
-                      border: OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.next,
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Name field (optional)
-                  TextField(
-                    controller: _nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Name (optional)',
-                      prefixIcon: Icon(Icons.person),
-                      border: OutlineInputBorder(),
-                    ),
-                    textInputAction: TextInputAction.done,
-                    onSubmitted: (_) => _login(),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Login button
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton(
-                      onPressed: _isLoading ? null : _login,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green.shade700,
-                        foregroundColor: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x4D10B981),
+                            blurRadius: 12,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
                       ),
-                      child: _isLoading
-                          ? const SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor:
-                                    AlwaysStoppedAnimation<Color>(Colors.white),
-                              ),
-                            )
-                          : const Text(
-                              'Login',
-                              style: TextStyle(fontSize: 16),
-                            ),
+                      child: const Icon(
+                        Icons.inventory_2,
+                        size: 40,
+                        color: Colors.white,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 24),
+                    
+                    // Title
+                    Text(
+                      'IKE',
+                      style: theme.textTheme.displaySmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Inventory Count & Upstock',
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryPale,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        'LocalCannabis',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: AppColors.primaryDark,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 40),
 
-                  // Dev mode notice
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.amber.shade200),
+                    // Email field
+                    TextField(
+                      controller: _emailController,
+                      decoration: InputDecoration(
+                        labelText: 'Email',
+                        prefixIcon: const Icon(Icons.email_outlined, size: 20),
+                        prefixIconColor: AppColors.textSecondary,
+                      ),
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
                     ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.info_outline,
-                            color: Colors.amber.shade700, size: 20),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Dev Mode: Any email will auto-create a user',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.amber.shade800,
+                    const SizedBox(height: 16),
+
+                    // Name field (optional)
+                    TextField(
+                      controller: _nameController,
+                      decoration: InputDecoration(
+                        labelText: 'Name (optional)',
+                        prefixIcon: const Icon(Icons.person_outline, size: 20),
+                        prefixIconColor: AppColors.textSecondary,
+                      ),
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _login(),
+                    ),
+                    const SizedBox(height: 32),
+
+                    // Login button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: _isLoading ? null : _login,
+                        child: _isLoading
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              )
+                            : const Text('Sign In'),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Dev mode notice
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0x1AF59E0B),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0x4DF59E0B)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.code,
+                            color: AppColors.warning,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Dev Mode: Connecting to local server',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: const Color(0xE6F59E0B),
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

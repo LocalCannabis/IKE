@@ -561,3 +561,12 @@ def process_imports():
             for imp in imports
         ]
     })
+
+
+# =============================================================================
+# SALES SYNC (from cova_sales to inventory_movements)
+# =============================================================================
+
+# Register sales sync routes
+from app.services.sales_sync import register_sync_routes
+register_sync_routes(bp)

@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../theme/app_theme.dart';
+import '../theme/app_theme.dart';
 
 class UpstockRunScreen extends StatefulWidget {
   final UpstockRun run;
@@ -92,7 +94,7 @@ class _UpstockRunScreenState extends State<UpstockRunScreen> {
 
     try {
       final appState = context.read<AppState>();
-      await appState.apiService.updateUpstockLine(
+      await appState.api.updateUpstockLine(
         runId: _run.id,
         sku: sku,
         pulledQty: pulledQty,
@@ -101,7 +103,7 @@ class _UpstockRunScreenState extends State<UpstockRunScreen> {
       );
 
       // Refresh run data
-      final result = await appState.apiService.getUpstockRun(_run.id);
+      final result = await appState.api.getUpstockRun(_run.id);
       setState(() {
         _run = result.run;
         _stats = result.stats;
@@ -157,11 +159,8 @@ class _UpstockRunScreenState extends State<UpstockRunScreen> {
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
           ),
-          ElevatedButton(
+          FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green.shade700,
-            ),
             child: const Text('Complete'),
           ),
         ],
@@ -173,13 +172,13 @@ class _UpstockRunScreenState extends State<UpstockRunScreen> {
 
       try {
         final appState = context.read<AppState>();
-        await appState.apiService.completeUpstockRun(_run.id);
+        await appState.api.completeUpstockRun(_run.id);
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Upstock completed!'),
-              backgroundColor: Colors.green,
+              backgroundColor: AppColors.emerald,
             ),
           );
           Navigator.pop(context);
@@ -204,7 +203,7 @@ class _UpstockRunScreenState extends State<UpstockRunScreen> {
 
       try {
         final appState = context.read<AppState>();
-        await appState.apiService.abandonUpstockRun(_run.id, reason: reason);
+        await appState.api.abandonUpstockRun(_run.id, reason: reason);
 
         if (mounted) {
           Navigator.pop(context);
@@ -225,8 +224,6 @@ class _UpstockRunScreenState extends State<UpstockRunScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(_run.locationId),
-        backgroundColor: Colors.orange.shade700,
-        foregroundColor: Colors.white,
         actions: [
           IconButton(
             icon: const Icon(Icons.cancel),
@@ -289,13 +286,13 @@ class _UpstockRunScreenState extends State<UpstockRunScreen> {
 
     return Container(
       padding: const EdgeInsets.all(16),
-      color: Colors.orange.shade50,
+      color: AppColors.emeraldLight.withValues(alpha: 0.2),
       child: Column(
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildStatChip('Done', _stats.done, Colors.green),
+              _buildStatChip('Done', _stats.done, AppColors.emerald),
               _buildStatChip('Pending', _stats.pending, Colors.orange),
               _buildStatChip('Skipped', _stats.skipped, Colors.grey),
               _buildStatChip('Exceptions', _stats.exceptions, Colors.red),
@@ -305,7 +302,7 @@ class _UpstockRunScreenState extends State<UpstockRunScreen> {
           LinearProgressIndicator(
             value: progress,
             backgroundColor: Colors.grey.shade300,
-            valueColor: AlwaysStoppedAnimation(Colors.orange.shade700),
+            valueColor: const AlwaysStoppedAnimation(AppColors.emerald),
           ),
           const SizedBox(height: 4),
           Text(
@@ -317,7 +314,7 @@ class _UpstockRunScreenState extends State<UpstockRunScreen> {
     );
   }
 
-  Widget _buildStatChip(String label, int value, MaterialColor color) {
+  Widget _buildStatChip(String label, int value, Color color) {
     return Column(
       children: [
         Text(
@@ -325,7 +322,7 @@ class _UpstockRunScreenState extends State<UpstockRunScreen> {
           style: TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.bold,
-            color: color.shade700,
+            color: color,
           ),
         ),
         Text(
@@ -382,10 +379,10 @@ class _UpstockRunScreenState extends State<UpstockRunScreen> {
       color: isHighlighted ? Colors.yellow.shade100 : null,
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: statusColor.shade100,
+          backgroundColor: statusColor.withValues(alpha: 0.2),
           child: Icon(
             _getStatusIcon(line.status),
-            color: statusColor.shade700,
+            color: statusColor,
             size: 20,
           ),
         ),
@@ -406,7 +403,7 @@ class _UpstockRunScreenState extends State<UpstockRunScreen> {
                 children: [
                   IconButton(
                     icon: const Icon(Icons.check_circle),
-                    color: Colors.green.shade700,
+                    color: AppColors.emerald,
                     onPressed: () => _showQuickConfirmDialog(line),
                     tooltip: 'Done',
                   ),
@@ -427,7 +424,7 @@ class _UpstockRunScreenState extends State<UpstockRunScreen> {
             : Text(
                 line.status.toUpperCase(),
                 style: TextStyle(
-                  color: statusColor.shade700,
+                  color: statusColor,
                   fontWeight: FontWeight.bold,
                   fontSize: 12,
                 ),
@@ -437,10 +434,10 @@ class _UpstockRunScreenState extends State<UpstockRunScreen> {
     );
   }
 
-  MaterialColor _getStatusColor(String status) {
+  Color _getStatusColor(String status) {
     switch (status) {
       case 'done':
-        return Colors.green;
+        return AppColors.emerald;
       case 'skipped':
         return Colors.grey;
       case 'exception':
@@ -470,7 +467,7 @@ class _UpstockRunScreenState extends State<UpstockRunScreen> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 4,
             offset: const Offset(0, -2),
           ),
@@ -479,13 +476,11 @@ class _UpstockRunScreenState extends State<UpstockRunScreen> {
       child: SafeArea(
         child: SizedBox(
           width: double.infinity,
-          child: ElevatedButton.icon(
+          child: FilledButton.icon(
             onPressed: _completeRun,
             icon: const Icon(Icons.check_circle),
             label: const Text('COMPLETE UPSTOCK'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green.shade700,
-              foregroundColor: Colors.white,
+            style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
               textStyle: const TextStyle(
                 fontSize: 18,
@@ -561,11 +556,8 @@ class _QuickConfirmDialogState extends State<_QuickConfirmDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
-        ElevatedButton(
+        FilledButton(
           onPressed: () => Navigator.pop(context, _qty),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.green.shade700,
-          ),
           child: const Text('Confirm'),
         ),
       ],

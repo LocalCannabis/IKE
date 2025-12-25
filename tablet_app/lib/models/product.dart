@@ -3,6 +3,8 @@ class Product {
   final int id;
   final String sku;
   final String? covaSku;
+  final String? gtin14;  // Full GTIN-14 barcode (14 digits)
+  final String? upc;     // UPC-A barcode (12 digits)
   final String name;
   final String? brand;
   final String? category;
@@ -18,6 +20,8 @@ class Product {
     required this.id,
     required this.sku,
     this.covaSku,
+    this.gtin14,
+    this.upc,
     required this.name,
     this.brand,
     this.category,
@@ -35,6 +39,8 @@ class Product {
       id: json['id'],
       sku: json['sku'],
       covaSku: json['cova_sku'],
+      gtin14: json['gtin_14'],
+      upc: json['upc'],
       name: json['name'],
       brand: json['brand'],
       category: json['category'],
@@ -61,4 +67,7 @@ class Product {
     if (cbdMin == cbdMax) return '${cbdMin?.toStringAsFixed(0)}%';
     return '${cbdMin?.toStringAsFixed(0)}-${cbdMax?.toStringAsFixed(0)}%';
   }
+  
+  /// Get the best available barcode for display
+  String? get displayBarcode => gtin14 ?? upc ?? covaSku ?? sku;
 }

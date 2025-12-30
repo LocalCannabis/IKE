@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/app_state.dart';
 import 'screens/login_screen.dart';
+import 'screens/count_screen.dart';
 import 'screens/session_screen.dart';
 import 'screens/upstock_home_screen.dart';
 import 'theme/app_theme.dart';
@@ -104,7 +105,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
 
   final _screens = const [
-    SessionScreen(),
+    CountScreen(),      // New simplified count screen
+    SessionScreen(),    // Legacy session screen (for history/admin)
     UpstockHomeScreen(),
   ];
 
@@ -124,9 +126,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         },
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.inventory_2_outlined),
-            selectedIcon: Icon(Icons.inventory_2),
+            icon: Icon(Icons.qr_code_scanner_outlined),
+            selectedIcon: Icon(Icons.qr_code_scanner),
             label: 'Count',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.history_outlined),
+            selectedIcon: Icon(Icons.history),
+            label: 'History',
           ),
           NavigationDestination(
             icon: Icon(Icons.move_up_outlined),

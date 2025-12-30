@@ -1,7 +1,11 @@
-import 'product.dart';
 import 'store.dart';
 
 /// Count session - container for a full inventory count
+/// SIMPLIFIED WORKFLOW (v2):
+/// - Only one active session per store at a time
+/// - Session has a SCOPE: location OR category OR full
+/// - Staff join the same session and count collaboratively
+/// - One scan = one item (no quantity accumulation)
 class CountSession {
   final String id;
   final int storeId;
@@ -11,9 +15,24 @@ class CountSession {
   final DateTime? expectedSnapshotAt;
   final String? notes;
   final CountSessionCreator createdBy;
+  
+  // Scope fields (simplified workflow)
+  final String? scopeType;  // 'location' | 'category' | 'full'
+  final int? scopeLocationId;
+  final InventoryLocation? scopeLocation;
+  final String? scopeCategory;
+  
+  // Stats
   final int passCount;
   final int submittedPassCount;
+  final int lineCount;      // Direct lines (simplified workflow)
+  final int totalCounted;   // Total items counted
+  final int uniqueSkus;     // Unique products counted
+  
+  // Legacy passes (for backward compatibility)
   final List<CountPass>? passes;
+  // Direct lines (simplified workflow)
+  final List<CountLine>? lines;
 
   CountSession({
     required this.id,
@@ -24,9 +43,17 @@ class CountSession {
     this.expectedSnapshotAt,
     this.notes,
     required this.createdBy,
+    this.scopeType,
+    this.scopeLocationId,
+    this.scopeLocation,
+    this.scopeCategory,
     required this.passCount,
     required this.submittedPassCount,
+    this.lineCount = 0,
+    this.totalCounted = 0,
+    this.uniqueSkus = 0,
     this.passes,
+    this.lines,
   });
 
   factory CountSession.fromJson(Map<String, dynamic> json) {
@@ -42,16 +69,39 @@ class CountSession {
           : null,
       notes: json['notes'],
       createdBy: CountSessionCreator.fromJson(json['created_by']),
+      scopeType: json['scope_type'],
+      scopeLocationId: json['scope_location_id'],
+      scopeLocation: json['scope_location'] != null
+          ? InventoryLocation.fromJson(json['scope_location'])
+          : null,
+      scopeCategory: json['scope_category'],
       passCount: json['pass_count'] ?? 0,
       submittedPassCount: json['submitted_pass_count'] ?? 0,
+      lineCount: json['line_count'] ?? 0,
+      totalCounted: json['total_counted'] ?? 0,
+      uniqueSkus: json['unique_skus'] ?? 0,
       passes: json['passes'] != null
           ? (json['passes'] as List).map((p) => CountPass.fromJson(p)).toList()
+          : null,
+      lines: json['lines'] != null
+          ? (json['lines'] as List).map((l) => CountLine.fromJson(l)).toList()
           : null,
     );
   }
 
-  bool get isActive => status == 'draft' || status == 'in_progress';
+  bool get isActive => status == 'in_progress';
   bool get canAddPasses => status == 'draft' || status == 'in_progress';
+  
+  /// Human-readable scope description
+  String get scopeDescription {
+    if (scopeType == 'location' && scopeLocation != null) {
+      return scopeLocation!.name;
+    } else if (scopeType == 'category' && scopeCategory != null) {
+      return scopeCategory!;
+    } else {
+      return 'Full Inventory';
+    }
+  }
 }
 
 class CountSessionCreator {
@@ -129,14 +179,18 @@ class CountPass {
   bool get isSubmitted => status == 'submitted';
 }
 
-/// Count line - individual item count within a pass
+/// Count line - individual item count
+/// Can belong directly to a session (simplified) or to a pass (legacy)
 class CountLine {
   final String id;
-  final String countPassId;
+  final String? sessionId;    // Simplified workflow: direct session lines
+  final String? countPassId;  // Legacy workflow: pass-based lines
   final int productId;
   final String sku;
   final String? barcode;
   final String? packageId;
+  final String? lotNo;        // From GS1 (10) Application Identifier
+  final String? packDate;     // From GS1 (13) Application Identifier
   final int countedQty;
   final String unit;
   final DateTime capturedAt;
@@ -146,11 +200,14 @@ class CountLine {
 
   CountLine({
     required this.id,
-    required this.countPassId,
+    this.sessionId,
+    this.countPassId,
     required this.productId,
     required this.sku,
     this.barcode,
     this.packageId,
+    this.lotNo,
+    this.packDate,
     required this.countedQty,
     required this.unit,
     required this.capturedAt,
@@ -162,11 +219,14 @@ class CountLine {
   factory CountLine.fromJson(Map<String, dynamic> json) {
     return CountLine(
       id: json['id'],
+      sessionId: json['session_id'],
       countPassId: json['count_pass_id'],
       productId: json['product_id'],
       sku: json['sku'],
       barcode: json['barcode'],
       packageId: json['package_id'],
+      lotNo: json['lot_no'],
+      packDate: json['pack_date'],
       countedQty: json['counted_qty'],
       unit: json['unit'] ?? 'each',
       capturedAt: DateTime.parse(json['captured_at']),

@@ -16,13 +16,19 @@ class AppState extends ChangeNotifier {
   List<Store> _stores = [];
   Store? _selectedStore;
 
-  // Session state
-  List<CountSession> _sessions = [];
-  CountSession? _activeSession;
-  CountPass? _activePass;
+  // Session state (simplified workflow)
+  CountSession? _activeSession;  // The one active session for the store
+  List<CountSession> _sessions = [];  // History of sessions
+  CountPass? _activePass;  // Legacy support
+  
+  // Recent scan for display
+  ScanResult? _lastScan;
 
   // Location state
   List<InventoryLocation> _locations = [];
+  
+  // Categories for scope selection
+  List<String> _categories = ['Flower', 'Pre-Rolls', 'Inhalable Extracts', 'Edibles', 'Topicals', 'Beverages', 'Accessories'];
 
   // Loading states
   bool _isLoading = false;
@@ -36,10 +42,15 @@ class AppState extends ChangeNotifier {
   List<CountSession> get sessions => _sessions;
   CountSession? get activeSession => _activeSession;
   CountPass? get activePass => _activePass;
+  ScanResult? get lastScan => _lastScan;
   List<InventoryLocation> get locations => _locations;
+  List<String> get categories => _categories;
   bool get isLoading => _isLoading;
   String? get error => _error;
   ApiService get api => _api;
+  
+  /// Whether there's an active session to join
+  bool get hasActiveSession => _activeSession != null;
 
   /// Initialize - check for saved session
   Future<void> initialize() async {
@@ -63,13 +74,20 @@ class AppState extends ChangeNotifier {
           // Load stores
           _stores = await _api.getStores();
 
-          // Restore selected store
+          // Restore selected store or auto-select first
           if (savedStoreId != null) {
             _selectedStore = _stores.firstWhere(
               (s) => s.id == savedStoreId,
               orElse: () => _stores.first,
             );
+          } else if (_stores.isNotEmpty) {
+            // Auto-select first store if none saved
+            _selectedStore = _stores.first;
+          }
+          
+          if (_selectedStore != null) {
             await _loadLocations();
+            await checkForActiveSession();
           }
         } catch (e) {
           // Token expired or invalid
@@ -180,6 +198,7 @@ class AppState extends ChangeNotifier {
     await prefs.setInt('selected_store_id', store.id);
 
     await _loadLocations();
+    await checkForActiveSession();
     await loadSessions();
 
     notifyListeners();
@@ -195,6 +214,173 @@ class AppState extends ChangeNotifier {
       _error = e.toString();
     }
   }
+
+  // ============ SIMPLIFIED WORKFLOW ============
+
+  /// Check for an active session (should be called on app load)
+  Future<void> checkForActiveSession() async {
+    if (_selectedStore == null) return;
+
+    try {
+      _activeSession = await _api.getActiveSession(_selectedStore!.id);
+      _error = null;
+    } catch (e) {
+      _activeSession = null;
+    }
+    notifyListeners();
+  }
+
+  /// Start a new count session with scope
+  Future<CountSession?> startSession({
+    required String scopeType,  // 'location' | 'category' | 'full'
+    int? scopeLocationId,
+    String? scopeCategory,
+    String? notes,
+  }) async {
+    if (_selectedStore == null) return null;
+
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final session = await _api.createSessionWithScope(
+        storeId: _selectedStore!.id,
+        scopeType: scopeType,
+        scopeLocationId: scopeLocationId,
+        scopeCategory: scopeCategory,
+        notes: notes,
+      );
+      _activeSession = session;
+      _lastScan = null;
+      notifyListeners();
+      return session;
+    } on ActiveSessionExistsException catch (e) {
+      // Another session exists - join it instead
+      _activeSession = e.existingSession;
+      _error = 'Joined existing session';
+      notifyListeners();
+      return e.existingSession;
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      return null;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Join the active session (refresh it from server)
+  Future<void> joinActiveSession() async {
+    if (_activeSession == null) return;
+
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      _activeSession = await _api.getSession(_activeSession!.id);
+      _lastScan = null;
+      _error = null;
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Scan a barcode (simplified workflow - goes directly to session)
+  Future<ScanResult?> scan(String barcode) async {
+    if (_activeSession == null) return null;
+
+    try {
+      final result = await _api.scanToSession(
+        sessionId: _activeSession!.id,
+        barcode: barcode,
+      );
+      _lastScan = result;
+      // Update local session stats
+      _activeSession = CountSession(
+        id: _activeSession!.id,
+        storeId: _activeSession!.storeId,
+        status: _activeSession!.status,
+        createdAt: _activeSession!.createdAt,
+        closedAt: _activeSession!.closedAt,
+        expectedSnapshotAt: _activeSession!.expectedSnapshotAt,
+        notes: _activeSession!.notes,
+        createdBy: _activeSession!.createdBy,
+        scopeType: _activeSession!.scopeType,
+        scopeLocationId: _activeSession!.scopeLocationId,
+        scopeLocation: _activeSession!.scopeLocation,
+        scopeCategory: _activeSession!.scopeCategory,
+        passCount: _activeSession!.passCount,
+        submittedPassCount: _activeSession!.submittedPassCount,
+        lineCount: result.totalItems,
+        totalCounted: result.totalItems,
+        uniqueSkus: result.uniqueSkus,
+        passes: _activeSession!.passes,
+        lines: _activeSession!.lines,
+      );
+      _error = null;
+      notifyListeners();
+      return result;
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  /// Undo the last scan
+  Future<bool> undoLastScan() async {
+    if (_activeSession == null || _lastScan == null) return false;
+
+    try {
+      await _api.deleteSessionLine(_activeSession!.id, _lastScan!.lineId);
+      _lastScan = null;
+      // Refresh session to get updated counts
+      _activeSession = await _api.getSession(_activeSession!.id);
+      _error = null;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Submit the current session
+  Future<bool> submitSession() async {
+    if (_activeSession == null) return false;
+
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      await _api.submitSession(_activeSession!.id);
+      _activeSession = null;
+      _lastScan = null;
+      _error = null;
+      await loadSessions();  // Refresh history
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Clear the last scan display
+  void clearLastScan() {
+    _lastScan = null;
+    notifyListeners();
+  }
+
+  // ============ LEGACY WORKFLOW (backward compatibility) ============
 
   /// Load sessions for current store
   Future<void> loadSessions() async {
@@ -214,7 +400,7 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// Create a new count session
+  /// Create a new count session (legacy - no scope)
   Future<CountSession?> createSession({String? name, String? description}) async {
     if (_selectedStore == null) return null;
 
@@ -232,6 +418,11 @@ class AppState extends ChangeNotifier {
       _error = null;
       notifyListeners();
       return session;
+    } on ActiveSessionExistsException catch (e) {
+      _activeSession = e.existingSession;
+      _error = 'Joined existing session';
+      notifyListeners();
+      return e.existingSession;
     } catch (e) {
       _error = e.toString();
       notifyListeners();

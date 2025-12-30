@@ -23,12 +23,37 @@ class _SessionScreenState extends State<SessionScreen> {
 
   Future<void> _createSession() async {
     final appState = context.read<AppState>();
-    final session = await appState.createSession(
-      name: 'Count ${DateTime.now().toString().substring(0, 16)}',
-    );
+    
+    // Debug: Check if store is selected
+    if (appState.selectedStore == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No store selected'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    
+    try {
+      final session = await appState.createSession(
+        name: 'Count ${DateTime.now().toString().substring(0, 16)}',
+      );
 
-    if (session != null && mounted) {
-      _openSession(session);
+      if (session != null && mounted) {
+        _openSession(session);
+      } else if (mounted) {
+        // Show error if session creation failed
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(appState.error ?? 'Failed to create session'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 

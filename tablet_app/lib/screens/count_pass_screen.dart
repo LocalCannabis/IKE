@@ -497,30 +497,24 @@ class _CameraScannerSheet extends StatefulWidget {
 }
 
 class _CameraScannerSheetState extends State<_CameraScannerSheet> {
-  final MobileScannerController _controller = MobileScannerController(
-    detectionSpeed: DetectionSpeed.normal,
-    facing: CameraFacing.back,
-    // Enable all barcode formats including 2D codes for lot/package tracking
-    formats: [
-      // 1D barcodes (UPC, EAN, etc.)
-      BarcodeFormat.upcA,
-      BarcodeFormat.upcE,
-      BarcodeFormat.ean8,
-      BarcodeFormat.ean13,
-      BarcodeFormat.code39,
-      BarcodeFormat.code93,
-      BarcodeFormat.code128,
-      BarcodeFormat.itf,
-      BarcodeFormat.codabar,
-      // 2D barcodes (QR, Data Matrix, PDF417 for cannabis lot tracking)
-      BarcodeFormat.qrCode,
-      BarcodeFormat.dataMatrix,
-      BarcodeFormat.pdf417,
-      BarcodeFormat.aztec,
-    ],
-  );
+  late MobileScannerController _controller;
   bool _hasScanned = false;
   String? _lastBarcodeType;
+  bool _torchOn = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = MobileScannerController(
+      detectionSpeed: DetectionSpeed.normal,  // Give more time to analyze
+      facing: CameraFacing.back,
+      torchEnabled: false,
+      // Use 'all' to capture any barcode format - important for GS1 DataBar variants
+      formats: [BarcodeFormat.all],
+      // Request higher resolution for better barcode detection
+      cameraResolution: const Size(1920, 1080),
+    );
+  }
 
   @override
   void dispose() {
@@ -666,11 +660,11 @@ class _CameraScannerSheetState extends State<_CameraScannerSheet> {
                     controller: _controller,
                     onDetect: _onDetect,
                   ),
-                  // Scan area overlay - larger for 2D codes
+                  // Scan area overlay - wide for stacked GS1 barcodes
                   Center(
                     child: Container(
-                      width: 280,
-                      height: 200,
+                      width: 320,
+                      height: 180,
                       decoration: BoxDecoration(
                         border: Border.all(
                           color: _hasScanned ? Colors.green : Colors.white,
@@ -699,12 +693,13 @@ class _CameraScannerSheetState extends State<_CameraScannerSheet> {
             child: Text(
               _hasScanned && _lastBarcodeType != null
                   ? '$_lastBarcodeType detected!'
-                  : 'Point camera at barcode or QR code',
+                  : 'Hold steady • Use flash for GS1 barcodes • Tap screen to focus',
               style: TextStyle(
                 color: _hasScanned ? Colors.green : Colors.grey.shade400,
                 fontSize: 14,
                 fontWeight: _hasScanned ? FontWeight.bold : FontWeight.normal,
               ),
+              textAlign: TextAlign.center,
             ),
           ),
           // Controls

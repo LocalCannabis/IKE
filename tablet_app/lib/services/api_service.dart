@@ -1,11 +1,12 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/models.dart';
+import '../config.dart';
 
 /// API service for communicating with the Flask backend
 class ApiService {
-  // Local dev server
-  static const String baseUrl = 'http://192.168.1.7:5000/api';
+  // Use centralized config
+  static const String baseUrl = AppConfig.baseUrl;
 
   String? _accessToken;
 
@@ -207,12 +208,132 @@ class ApiService {
 
     if (response.statusCode == 201 || response.statusCode == 200) {
       return CountSession.fromJson(jsonDecode(response.body));
+    } else if (response.statusCode == 409) {
+      // Active session already exists
+      final data = jsonDecode(response.body);
+      throw ActiveSessionExistsException(
+        data['message'] ?? 'Active session already exists',
+        CountSession.fromJson(data['session']),
+      );
     } else {
       throw ApiException('Failed to create session', response.statusCode);
     }
   }
 
-  // ============ COUNT PASSES ============
+  /// Get the active session for a store (simplified workflow)
+  Future<CountSession?> getActiveSession(int storeId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/count/sessions/active?store_id=$storeId'),
+      headers: _headers,
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      if (data['active'] == true) {
+        return CountSession.fromJson(data['session']);
+      }
+    }
+    return null;
+  }
+
+  /// Create a new count session with scope (simplified workflow)
+  Future<CountSession> createSessionWithScope({
+    required int storeId,
+    required String scopeType,  // 'location' | 'category' | 'full'
+    int? scopeLocationId,
+    String? scopeCategory,
+    String? notes,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/count/sessions'),
+      headers: _headers,
+      body: jsonEncode({
+        'store_id': storeId,
+        'scope_type': scopeType,
+        if (scopeLocationId != null) 'scope_location_id': scopeLocationId,
+        if (scopeCategory != null) 'scope_category': scopeCategory,
+        if (notes != null) 'notes': notes,
+      }),
+    );
+
+    if (response.statusCode == 201 || response.statusCode == 200) {
+      return CountSession.fromJson(jsonDecode(response.body));
+    } else if (response.statusCode == 409) {
+      final data = jsonDecode(response.body);
+      throw ActiveSessionExistsException(
+        data['message'] ?? 'Active session already exists',
+        CountSession.fromJson(data['session']),
+      );
+    } else {
+      throw ApiException('Failed to create session', response.statusCode);
+    }
+  }
+
+  /// Submit a session (simplified workflow - mark as complete)
+  Future<CountSession> submitSession(String sessionId) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/count/sessions/$sessionId/submit'),
+      headers: _headers,
+    );
+
+    if (response.statusCode == 200) {
+      return CountSession.fromJson(jsonDecode(response.body));
+    } else {
+      throw ApiException('Failed to submit session', response.statusCode);
+    }
+  }
+
+  /// Scan a product directly to session (simplified workflow)
+  Future<ScanResult> scanToSession({
+    required String sessionId,
+    required String barcode,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/count/sessions/$sessionId/scan'),
+      headers: _headers,
+      body: jsonEncode({'barcode': barcode}),
+    );
+
+    if (response.statusCode == 201 || response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return ScanResult(
+        success: true,
+        product: ScanProduct.fromJson(data['product']),
+        lineId: data['line_id'],
+        lotNo: data['lot_no'],
+        packDate: data['pack_date'],
+        totalItems: data['session_stats']['total_items'],
+        uniqueSkus: data['session_stats']['unique_skus'],
+      );
+    } else {
+      // Extract error message
+      String errorMessage = 'Product not found';
+      try {
+        final errorData = jsonDecode(response.body);
+        if (errorData['error'] != null) {
+          errorMessage = errorData['error'];
+          if (errorData['message'] != null) {
+            errorMessage = errorData['message'];
+          }
+        }
+      } catch (_) {}
+      throw ApiException(errorMessage, response.statusCode);
+    }
+  }
+
+  /// Delete a line from a session (undo a scan)
+  Future<void> deleteSessionLine(String sessionId, String lineId) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/count/sessions/$sessionId/lines/$lineId'),
+      headers: _headers,
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw ApiException('Failed to delete line', response.statusCode);
+    }
+  }
+
+  // ============ COUNT PASSES (Legacy) ============
 
   /// Start a new count pass
   Future<CountPass> createPass({
@@ -298,7 +419,21 @@ class ApiService {
             : null,
       );
     } else {
-      throw ApiException('Failed to add line', response.statusCode);
+      // Try to extract error message from response body
+      String errorMessage = 'Failed to add line';
+      try {
+        final errorData = jsonDecode(response.body);
+        if (errorData['error'] != null) {
+          errorMessage = errorData['error'];
+          if (errorData['hint'] != null) {
+            errorMessage += ': ${errorData['hint']}';
+          }
+          if (errorData['barcode'] != null) {
+            errorMessage += ' (scanned: ${errorData['barcode']})';
+          }
+        }
+      } catch (_) {}
+      throw ApiException(errorMessage, response.statusCode);
     }
   }
 
@@ -589,4 +724,66 @@ class ApiException implements Exception {
 
   @override
   String toString() => 'ApiException: $message (status: $statusCode)';
+}
+
+/// Thrown when trying to create a session but one already exists
+class ActiveSessionExistsException implements Exception {
+  final String message;
+  final CountSession existingSession;
+
+  ActiveSessionExistsException(this.message, this.existingSession);
+
+  @override
+  String toString() => 'ActiveSessionExistsException: $message';
+}
+
+// ============ SCAN RESULT (Simplified workflow) ============
+
+class ScanResult {
+  final bool success;
+  final ScanProduct product;
+  final String lineId;
+  final String? lotNo;
+  final String? packDate;
+  final int totalItems;
+  final int uniqueSkus;
+
+  ScanResult({
+    required this.success,
+    required this.product,
+    required this.lineId,
+    this.lotNo,
+    this.packDate,
+    required this.totalItems,
+    required this.uniqueSkus,
+  });
+}
+
+class ScanProduct {
+  final int id;
+  final String name;
+  final String? brand;
+  final String? category;
+  final String? subcategory;
+  final String sku;
+
+  ScanProduct({
+    required this.id,
+    required this.name,
+    this.brand,
+    this.category,
+    this.subcategory,
+    required this.sku,
+  });
+
+  factory ScanProduct.fromJson(Map<String, dynamic> json) {
+    return ScanProduct(
+      id: json['id'],
+      name: json['name'],
+      brand: json['brand'],
+      category: json['category'],
+      subcategory: json['subcategory'],
+      sku: json['sku'],
+    );
+  }
 }

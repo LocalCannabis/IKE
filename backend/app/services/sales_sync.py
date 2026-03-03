@@ -16,7 +16,7 @@ class SalesSyncService:
     """
     Service to sync sales from cova_sales table to inventory_movements.
     
-    The cova_sales table is populated by cova-bridge from Cova email exports.
+    The cova_sales table is populated by JFK's email ingestion service from Cova email exports.
     This service transforms those sales into movements for upstock computation.
     """
     
